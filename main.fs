@@ -62,72 +62,65 @@ let rec bindArgumentsToValues (argumentNames, argumentValues, e) =
     let newBindings = bind(argName, argVal, bindingsList)
     bindArgumentsToValues(nameRest, valRest, LexicalScopedEnvironment(newBindings))
 
-let rec eval (c, e) =
+let rec eval (c, e, functions) =
   match c with
   | IntConstant(value) -> (IntValue value)
   | BooleanConstant(value) -> (BooleanValue value)
   | BinaryOp(op,left,right) ->
-    let (IntValue l) = eval (left, e)
-    let (IntValue r) = eval (right, e)
+    let (IntValue l) = eval (left, e, functions)
+    let (IntValue r) = eval (right, e, functions)
     match op with
     | MINUS -> IntValue (l - r)
     | PLUS -> IntValue (l + r)
     | TIMES -> IntValue (l * r)
     | DIV -> IntValue (l / r)
   | ComparisonExpression(compType, left, right) ->
-    let (IntValue l) = eval (left, e)
-    let (IntValue r) = eval (right, e)
+    let (IntValue l) = eval (left, e, functions)
+    let (IntValue r) = eval (right, e, functions)
     match compType with
     | EQ -> BooleanValue (l = r)
   | IfExpression(compExpression, thenExpression, elseExpression) ->
-    let (BooleanValue condResult) = eval (compExpression, e)
-    if condResult then eval (thenExpression, e)
-    else eval (elseExpression, e)
+    let (BooleanValue condResult) = eval (compExpression, e, functions)
+    if condResult then eval (thenExpression, e, functions)
+    else eval (elseExpression, e, functions)
   | LetExpression(name, valueExpression, body) ->
     // Bind the name to the value of evaluating the initialization expression
-    let value = eval (valueExpression, e)
+    let value = eval (valueExpression, e, functions)
     match e with
     | DynamicScopedEnvironment(outerScopeBindingsList) ->
       match currDynamicScopeEnv with
       | DynamicScopedEnvironment(bindingsList) ->
         let newBindingsList = bind (name, value, bindingsList)
         currDynamicScopeEnv <- DynamicScopedEnvironment(newBindingsList)
-        eval (body, currDynamicScopeEnv)
+        eval (body, currDynamicScopeEnv, functions)
       | _ -> BooleanValue(false)    // there was an error 
     | LexicalScopedEnvironment(bindingsList) -> 
       let newBindingsList = bind (name, value, bindingsList)
-      eval (body, LexicalScopedEnvironment(newBindingsList))
+      eval (body, LexicalScopedEnvironment(newBindingsList), functions)
 
   | VariableExpression(varName) ->
     // Check what is the value bound to the name in the variable expression
+    printfn "Looking for %A" varName
     match e with
     | DynamicScopedEnvironment(outerScopeBindingsList) -> 
       match currDynamicScopeEnv with
       | DynamicScopedEnvironment(bindingsList) ->lookup (varName, bindingsList)
     | LexicalScopedEnvironment(bindingsList) -> lookup (varName, bindingsList)
     
-  | FunctionCallExpression(function_, paramsToEvaluate) ->
-    let rec getActualValues (actualArguments, evaluatedValues) = 
-      match actualArguments with
-      | [] -> List.rev evaluatedValues
-      | head :: tail -> getActualValues(tail, (eval(head, e))::evaluatedValues)
-    
-    actualValues <- getActualValues(paramsToEvaluate, [])
-    
-    let successful = eval (function_, e) // f(actualValues)
-    successful
-    // let mutable argumentValues = []
+  | FunctionCallExpression(functionName, paramsToEvaluate) ->
+    // let Function(_, arguments, body) as f = 
+    let a = findFunction(functionName, functions)
+    let mutable argumentValues = []
 
-    // for paramVal in paramsToEvaluate do
-    //   argumentValues <- ((eval(paramVal, e)) :: argumentValues)
-    
-    // argumentValues <- List.rev argumentValues
-    // let evaluatingEnvironment = bindArgumentsToValues (arguments, argumentValues, e)
-    
+    for paramVal in paramsToEvaluate do
+      argumentValues <- ((eval(paramVal, e, functions)) :: argumentValues)
 
+    argumentValues <- List.rev argumentValues
+    let evaluatingEnvironment = bindArgumentsToValues (arguments, argumentValues, e, functions)
+    eval(body, evaluatingEnvironment, functions)
 
   | FunctionDeclarationExpression (functionName, argumentNames, body) ->
-    eval(body, e)
+    eval(body, e, functions)
 
 
     // let retVal = fun (actualValues)-> body
@@ -135,7 +128,7 @@ let rec eval (c, e) =
 
 
     // FunctionValue(fun actualArguments ->
-    //   let evaluatingEnvironment = bindArgumentsToValues (argumentNames, actualArguments, e)
+    //   let evaluatingEnvironment = bindArgumentsToValues (argumentNames, actualArguments, e, functions)
     //   eval(body, evaluatingEnvironment)
     //   )
 
@@ -251,7 +244,7 @@ let fact = Function(  // NameType * (Expression list)
         Name("x")
       ), 
       FunctionCallExpression(
-        VariableExpression(Name("fact")), 
+        Name("fact"), 
         [BinaryOp(
           MINUS, 
            VariableExpression(
@@ -266,13 +259,13 @@ let fact = Function(  // NameType * (Expression list)
 
 // safeDivision(474, (474 - (400 + 74)))
 let p8 = FunctionCallExpression(  // NameType * (Expression list)
-  VariableExpression(Name("safeDivision")), 
+  Name("safeDivision"), 
   [IntConstant(474); BinaryOp(MINUS,IntConstant(474),BinaryOp(PLUS, IntConstant(400), IntConstant(74)))]
 )
 
 // fact(5)
 let p9 = FunctionCallExpression(
-  VariableExpression(Name("fact")), 
+  Name("fact"), 
   [IntConstant(5)]
 )
 
@@ -329,7 +322,7 @@ let p10 = LetExpression(
 
 let e = LexicalScopedEnvironment([])
 
-printfn "\ncurr result: %A" (eval(p10, e))
+printfn "\ncurr result: %A" (eval(p9, e, [safeDivision; fact]))
 
 
 
