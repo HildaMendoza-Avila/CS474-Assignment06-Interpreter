@@ -36,8 +36,11 @@ type FunctionType = Function of NameType * (NameType list) * Expression
 let rec findFunction (functionName, functionList) = 
   match functionList with
   | [] -> Function(Name("Error: Function not found"), [], BooleanConstant(false))
-  | Function(Name(varName), _, _) :: tail -> if (varName = functionName) then functionList.Head
-  | _ :: tail -> findFunction (functionName, tail)
+  | head :: tail -> 
+    match head with
+    | (Function(varName, p, b)) -> 
+      if (varName = functionName) then head
+      else findFunction (functionName, tail)
 
 let mutable currDynamicScopeEnv = DynamicScopedEnvironment([])
 
@@ -51,13 +54,6 @@ let rec bindArgumentsToValues (argumentNames, argumentValues, e) =
   | ((argName :: nameRest), (argVal :: valRest), LexicalScopedEnvironment(bindingsList)) -> 
     let newBindings = bind(argName, argVal, bindingsList)
     bindArgumentsToValues(nameRest, valRest, LexicalScopedEnvironment(newBindings))
-
-let rec evaluateArgumentValues(paramValues, evaluatedSoFar, e , functions) = 
-  match paramValues with
-  | [] -> (List.rev evaluatedSoFar)
-  | paramToEvaluate :: restToEvaluate -> 
-    let evaluatedVal = eval(paramToEvaluate, e, functions)
-    evaluateArgumentValues(restToEvaluate, (evaluatedVal :: evaluatedSoFar), e, functions)
 
 let rec eval (c, e, functions) =
   match c with
@@ -103,9 +99,14 @@ let rec eval (c, e, functions) =
       | DynamicScopedEnvironment(bindingsList) ->lookup (varName, bindingsList)
     | LexicalScopedEnvironment(bindingsList) -> lookup (varName, bindingsList)
     
-  | FunctionCallExpression(Name(functionName), paramValues) ->
+  | FunctionCallExpression(functionName, paramsToEvaluate) ->
     let Function(functName, arguments, body) as f = findFunction(functionName, functions)
-    let argumentValues = evaluateArgumentValues(paramValues, [], e, functions)
+    let mutable argumentValues = []
+
+    for paramVal in paramsToEvaluate do
+      argumentValues <- ((eval(paramVal, e, functions)) :: argumentValues)
+    
+    argumentValues <- List.rev argumentValues
     let evaluatingEnvironment = bindArgumentsToValues (arguments, argumentValues, e)
     eval(body, evaluatingEnvironment, functions)
 
@@ -174,12 +175,12 @@ let p7 = LetExpression(
   )
 )
 
-let params = 
+// let params = 
 
 // safeDivision(top, bot) : if (bot == 0) then 0 else top/bot
-let safeDivision = Function(
+let safeDivision = Function(  // NameType * (NameType list) * Expression 
   Name("safeDivision"), 
-  [Name("top"); Name("bot")]
+  [Name("top"); Name("bot")],
   IfExpression(
     ComparisonExpression(
       EQ, 
@@ -202,9 +203,9 @@ let safeDivision = Function(
 )
 
 // fact(x) : if (x == 1) then 1 else x * fact(x-1)
-let fact = Function(
+let fact = Function(  // NameType * (Expression list)
   Name("fact"),  
-  [Name("x")]
+  [Name("x")],
   IfExpression(
     ComparisonExpression(
       EQ, 
@@ -234,25 +235,20 @@ let fact = Function(
 )
 
 // safeDivision(474, (474 - (400 + 74)))
-let p8 = FunctionCallExpression(
+let p8 = FunctionCallExpression(  // NameType * (Expression list)
   Name("safeDivision"), 
-  [
-    IntConstant(474); 
-    BinaryOp(
-      MINUS, 
-      IntConstant(474), 
-      BinaryOp(
-        PLUS, 
-        IntConstant(400), 
-        IntConstant(74)
-      )
-    )
-  ]
+  [IntConstant(474); (BinaryOp(MINUS,IntConstant(474),BinaryOp(PLUS, IntConstant(400), IntConstant(74))))]
+)
+
+// fact(5)
+let p9 = FunctionCallExpression(
+  Name("fact"), 
+  [IntConstant(5)]
 )
 
 let e = LexicalScopedEnvironment([])
 
-printfn "\ncurr result: %A" (eval(p8, e, [safeDivision, [fact, []]]))
+printfn "\ncurr result: %A" (eval(p9, e, [safeDivision; fact]))
 
 
 
