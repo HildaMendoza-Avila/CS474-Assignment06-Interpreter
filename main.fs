@@ -1,14 +1,9 @@
 type Operator = PLUS | MINUS | TIMES | DIV
 type ComparisonType = EQ
 
-// type LambdaType// = ('a -> 'b) -> 'a list -> 'b list
-//'a -> 'a   //unit//(('a) list) -> (('b) list)     //'a -> unit -> 'a
-
-
 type Value =
   | IntValue of int32
   | BooleanValue of bool
-  | FunctionValue of ((Value list) -> Value )
 
 type NameType = Name of string
 type BindingType = Binding of NameType * Value
@@ -34,8 +29,7 @@ type Expression =
   | ComparisonExpression of ComparisonType * Expression * Expression
   | LetExpression of NameType * Expression * Expression
   | VariableExpression of NameType
-  | FunctionCallExpression of Expression * (Expression list)
-  | FunctionDeclarationExpression of NameType * (NameType list) * Expression 
+  | FunctionCallExpression of NameType * (Expression list)
 
 type FunctionType = Function of NameType * (NameType list) * Expression 
 
@@ -49,7 +43,6 @@ let rec findFunction (functionName, functionList) =
       else findFunction (functionName, tail)
 
 let mutable currDynamicScopeEnv = DynamicScopedEnvironment([])
-let mutable actualValues = []
 
 let rec bindArgumentsToValues (argumentNames, argumentValues, e) = 
   match (argumentNames, argumentValues, e) with
@@ -100,7 +93,6 @@ let rec eval (c, e, functions) =
 
   | VariableExpression(varName) ->
     // Check what is the value bound to the name in the variable expression
-    printfn "Looking for %A" varName
     match e with
     | DynamicScopedEnvironment(outerScopeBindingsList) -> 
       match currDynamicScopeEnv with
@@ -108,30 +100,15 @@ let rec eval (c, e, functions) =
     | LexicalScopedEnvironment(bindingsList) -> lookup (varName, bindingsList)
     
   | FunctionCallExpression(functionName, paramsToEvaluate) ->
-    // let Function(_, arguments, body) as f = 
-    let a = findFunction(functionName, functions)
+    let Function(functName, arguments, body) as f = findFunction(functionName, functions)
     let mutable argumentValues = []
 
     for paramVal in paramsToEvaluate do
       argumentValues <- ((eval(paramVal, e, functions)) :: argumentValues)
-
+    
     argumentValues <- List.rev argumentValues
-    let evaluatingEnvironment = bindArgumentsToValues (arguments, argumentValues, e, functions)
+    let evaluatingEnvironment = bindArgumentsToValues (arguments, argumentValues, e)
     eval(body, evaluatingEnvironment, functions)
-
-  | FunctionDeclarationExpression (functionName, argumentNames, body) ->
-    eval(body, e, functions)
-
-
-    // let retVal = fun (actualValues)-> body
-    // retVal
-
-
-    // FunctionValue(fun actualArguments ->
-    //   let evaluatingEnvironment = bindArgumentsToValues (argumentNames, actualArguments, e, functions)
-    //   eval(body, evaluatingEnvironment)
-    //   )
-
 
 // 474
 let p1 = IntConstant(474)     
@@ -260,7 +237,7 @@ let fact = Function(  // NameType * (Expression list)
 // safeDivision(474, (474 - (400 + 74)))
 let p8 = FunctionCallExpression(  // NameType * (Expression list)
   Name("safeDivision"), 
-  [IntConstant(474); BinaryOp(MINUS,IntConstant(474),BinaryOp(PLUS, IntConstant(400), IntConstant(74)))]
+  [IntConstant(474); (BinaryOp(MINUS,IntConstant(474),BinaryOp(PLUS, IntConstant(400), IntConstant(74))))]
 )
 
 // fact(5)
@@ -268,57 +245,6 @@ let p9 = FunctionCallExpression(
   Name("fact"), 
   [IntConstant(5)]
 )
-
-// { let safeDivision = function(top, bot){ if (bot == 0) then 0 else top/bot }
-//     safeDivision(474, (474 - (400 + 74)))
-// }
-let p10 = LetExpression(
-  Name("safeDivision"), 
-  FunctionDeclarationExpression( // here :) Add to Expressions :)
-    Name("safeDivision"), 
-    [Name("top"); 
-    Name("bot")], 
-    IfExpression(
-    ComparisonExpression(
-      EQ, 
-      VariableExpression(
-        Name("bot")
-      ), 
-      IntConstant(0)
-    ), 
-    IntConstant(0), 
-    BinaryOp(
-       DIV, 
-       VariableExpression(
-         Name("bot")
-       ), 
-       VariableExpression(
-         Name("top")
-       )
-    )
-  )
-  ),
-  FunctionCallExpression(
-    VariableExpression(Name("safeDivision")), 
-    [IntConstant(474); 
-    BinaryOp(
-      MINUS,
-      IntConstant(474),
-      BinaryOp(
-        PLUS, 
-        IntConstant(400), 
-        IntConstant(74)
-      )
-    )]
-  ) 
-)
-
-// { let safeDivision = function(top, bot){ if (bot == 0) then 0 else top/bot }
-//   { let fact = function(x) { if (x ==1) then 1 else x * fact(x-1)}
-//     safeDivision(474, (474 - (400 + 74)))
-//   }
-// }
-
 
 let e = LexicalScopedEnvironment([])
 
