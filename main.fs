@@ -31,9 +31,33 @@ type Expression =
   | VariableExpression of NameType
   | FunctionCallExpression of NameType * (Expression list)
 
-type FunctionType = Function of NameType  * Expression * (NameType list)
+type FunctionType = Function of NameType * (NameType list) * Expression 
 
-let mutable currDynamicScopeEnv = DynamicScopedEnvironment([]) 
+let rec findFunction (functionName, functionList) = 
+  match functionList with
+  | [] -> Function(Name("Error: Function not found"), [], BooleanConstant(false))
+  | Function(Name(varName), _, _) :: tail -> if (varName = functionName) then functionList.Head
+  | _ :: tail -> findFunction (functionName, tail)
+
+let mutable currDynamicScopeEnv = DynamicScopedEnvironment([])
+
+let rec bindArgumentsToValues (argumentNames, argumentValues, e) = 
+  match (argumentNames, argumentValues, e) with
+  | ([], _, _) -> e
+  | (_, [], _) -> e
+  | ((argName :: nameRest), (argVal :: valRest), DynamicScopedEnvironment(bindingsList)) -> 
+    let newBindings = bind(argName, argVal, bindingsList)
+    bindArgumentsToValues(nameRest, valRest, DynamicScopedEnvironment(newBindings))
+  | ((argName :: nameRest), (argVal :: valRest), LexicalScopedEnvironment(bindingsList)) -> 
+    let newBindings = bind(argName, argVal, bindingsList)
+    bindArgumentsToValues(nameRest, valRest, LexicalScopedEnvironment(newBindings))
+
+let rec evaluateArgumentValues(paramValues, evaluatedSoFar, e , functions) = 
+  match paramValues with
+  | [] -> (List.rev evaluatedSoFar)
+  | paramToEvaluate :: restToEvaluate -> 
+    let evaluatedVal = eval(paramToEvaluate, e, functions)
+    evaluateArgumentValues(restToEvaluate, (evaluatedVal :: evaluatedSoFar), e, functions)
 
 let rec eval (c, e, functions) =
   match c with
@@ -79,6 +103,11 @@ let rec eval (c, e, functions) =
       | DynamicScopedEnvironment(bindingsList) ->lookup (varName, bindingsList)
     | LexicalScopedEnvironment(bindingsList) -> lookup (varName, bindingsList)
     
+  | FunctionCallExpression(Name(functionName), paramValues) ->
+    let Function(functName, arguments, body) as f = findFunction(functionName, functions)
+    let argumentValues = evaluateArgumentValues(paramValues, [], e, functions)
+    let evaluatingEnvironment = bindArgumentsToValues (arguments, argumentValues, e)
+    eval(body, evaluatingEnvironment, functions)
 
 // 474
 let p1 = IntConstant(474)     
@@ -150,6 +179,7 @@ let params =
 // safeDivision(top, bot) : if (bot == 0) then 0 else top/bot
 let safeDivision = Function(
   Name("safeDivision"), 
+  [Name("top"); Name("bot")]
   IfExpression(
     ComparisonExpression(
       EQ, 
@@ -168,13 +198,13 @@ let safeDivision = Function(
          Name("top")
        )
     )
-  ), 
-  [Name("top"); Name("bot")]
+  )
 )
 
 // fact(x) : if (x == 1) then 1 else x * fact(x-1)
 let fact = Function(
   Name("fact"),  
+  [Name("x")]
   IfExpression(
     ComparisonExpression(
       EQ, 
@@ -200,8 +230,7 @@ let fact = Function(
         )]
       )
     )
-  ), 
-  [Name("x")]
+  )
 )
 
 // safeDivision(474, (474 - (400 + 74)))
